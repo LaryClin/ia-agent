@@ -19,4 +19,11 @@ clean:
 	@docker compose down -v
 	@rm -rf node_modules
 
+restart:
+	@echo "Stopping services..."
+	@docker compose down
+	@echo "Starting services..."
+	@docker compose up -d
+
+
 all: install start

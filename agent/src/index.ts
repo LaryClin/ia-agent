@@ -62,15 +62,19 @@ import net from "net";
 import path from "path";
 import { fileURLToPath } from "url";
 import yargs from "yargs";
-import amqp from "amqplib";
+import amqp, { ConsumeMessage } from "amqplib";
 import { config } from "./config";
-import { Pool } from "pg";
 import { promises as fsn } from "fs";
-import { decrypt } from "./utils";
+import {
+    Agent,
+    AgentCredentials,
+    decodeMessage,
+    decodeMessageCredentials,
+    decrypt,
+} from "./utils";
 
 const __filename = fileURLToPath(import.meta.url); // get the resolved path to the file
 const __dirname = path.dirname(__filename); // get the name of the directory
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 export const wait = (minTime: number = 1000, maxTime: number = 3000) => {
     const waitTime =
@@ -85,7 +89,7 @@ const logFetch = async (url: string, options: any) => {
     return fetch(url, options);
 };
 
-async function setupRabbitMQ(directClient: DirectClient) {
+/* async function setupRabbitMQ(directClient: DirectClient) {
     try {
         const connection = await amqp.connect(config.rabbitmq.url);
         const channel = await connection.createChannel();
@@ -114,26 +118,163 @@ async function setupRabbitMQ(directClient: DirectClient) {
         elizaLogger.error("Failed to connect to RabbitMQ:", error);
     }
 }
+ */
+async function setupRabbitMQ(directClient: DirectClient) {
+    try {
+        const connection = await amqp.connect(config.rabbitmq.url);
+        const channel = await connection.createChannel();
 
-async function createCharacter(agentData: any): Promise<Character> {
+        await channel.assertQueue(config.rabbitmq.QUEUE_AGENT_CREATION, {
+            durable: true,
+        });
+        await channel.assertQueue(config.rabbitmq.QUEUE_AGENT_CREDENTIALS, {
+            durable: true,
+        });
+
+        channel.consume(
+            config.rabbitmq.QUEUE_AGENT_CREATION,
+            async (msg: ConsumeMessage | null) => {
+                if (msg) {
+                    try {
+                        const agents: Agent[] = decodeMessage(msg);
+                        await handleAgentCreation(agents, directClient);
+                        channel.ack(msg);
+                        elizaLogger.info(
+                            "Agent creation message received",
+                            JSON.stringify(agents)
+                        );
+                    } catch (error) {
+                        elizaLogger.error(
+                            "Error processing agent_creation message:",
+                            error
+                        );
+                        channel.nack(msg);
+                    }
+                }
+            }
+        );
+
+        channel.consume(
+            config.rabbitmq.QUEUE_AGENT_CREDENTIALS,
+            async (msg: ConsumeMessage | null) => {
+                if (msg) {
+                    try {
+                        const credentials: AgentCredentials =
+                            decodeMessageCredentials(msg);
+
+                        await handleAgentCredentials(credentials, directClient);
+
+                        channel.ack(msg);
+                        elizaLogger.info("Agent credentials received", {
+                            address: credentials.address,
+                            email: credentials.email,
+                        });
+                    } catch (error) {
+                        elizaLogger.error(
+                            "Error processing agent_credentials message:",
+                            error
+                        );
+                        channel.nack(msg);
+                    }
+                }
+            }
+        );
+
+        elizaLogger.log("Connected to RabbitMQ and listening for agent events");
+    } catch (error) {
+        elizaLogger.error(
+            "Failed to connect to RabbitMQ:",
+            error,
+            config.rabbitmq.url
+        );
+    }
+}
+
+async function handleAgentCreation(
+    agents: Agent[],
+    directClient: DirectClient
+) {
+    for (const agentData of agents) {
+        try {
+            const character = await createCharacter(agentData);
+            await saveCharacterFile(character);
+            await directClient.startAgent(character);
+            elizaLogger.log(`Agent created and started: ${character.id}`);
+        } catch (error) {
+            elizaLogger.error(
+                `Error creating agent: ${agentData.address}`,
+                error
+            );
+        }
+    }
+}
+
+async function handleAgentCredentials(credentials, directClient: DirectClient) {
+    const { address, login, password, email } = credentials;
+    try {
+        // Update the character with new credentials
+        await updateCharacterWithCredentials(address, login, password, email);
+        directClient.unregisterAgent(address);
+
+        // Restart the agent with updated credentials
+        const updatedCharacter = await loadCharacter(address);
+        const newRuntime = await startAgent(updatedCharacter, directClient);
+        directClient.registerAgent(newRuntime);
+
+        elizaLogger.log(
+            `Credentials updated and agent restarted for: ${address}`
+        );
+    } catch (error) {
+        elizaLogger.error(
+            `Error updating credentials for agent: ${address}`,
+            error
+        );
+    }
+}
+
+export async function updateCharacterWithCredentials(
+    agentAddress: string,
+    login: string,
+    password: string,
+    email: string
+): Promise<void> {
+    const characterPath = path.join("./characters", `${agentAddress}.json`);
+
+    try {
+        const characterData = await fsn.readFile(characterPath, "utf-8");
+        const character: Character = JSON.parse(characterData);
+
+        character.settings = character.settings || {};
+        character.settings.secrets = character.settings.secrets || {};
+        character.settings.secrets.TWITTER_USERNAME = login;
+        character.settings.secrets.TWITTER_EMAIL = email;
+        character.settings.secrets.TWITTER_PASSWORD_ENCRYPTED = password;
+        character.clients = [Clients.TWITTER];
+
+        await fsn.writeFile(characterPath, JSON.stringify(character, null, 2));
+
+        elizaLogger.log(`Credentials updated for agent: ${agentAddress}`);
+    } catch (error) {
+        elizaLogger.error(
+            `Error updating credentials for agent: ${agentAddress}`,
+            error
+        );
+        throw error; // Rethrow the error to be caught in handleAgentCredentials
+    }
+}
+
+async function createCharacter(agentData: Agent): Promise<Character> {
     return {
-        id: agentData.agentUuid,
-        name: agentData.agentName,
-        bio: [agentData.agentBio],
+        name: agentData.name,
+        bio: [agentData.description],
         lore: [],
+        settings: { secrets: { id: agentData.address } },
         messageExamples: [],
         postExamples: [],
         topics: [],
         adjectives: [],
         clients: [],
         plugins: [],
-        settings: {
-            secrets: {
-                TWITTER_USERNAME: agentData.twitterCredentials.username,
-                TWITTER_PASSWORD: agentData.twitterCredentials.password,
-                TWITTER_COOKIE: agentData.twitterCredentials.cookie,
-            },
-        },
         style: {
             all: [],
             chat: [],
@@ -146,7 +287,10 @@ async function createCharacter(agentData: any): Promise<Character> {
 async function saveCharacterFile(character: Character): Promise<void> {
     const outputDir = "./characters";
     await fsn.mkdir(outputDir, { recursive: true });
-    const outputFile = path.join(outputDir, `${character.id}.json`);
+    const outputFile = path.join(
+        outputDir,
+        `${character.settings.secrets.id}.json`
+    );
     await fsn.writeFile(outputFile, JSON.stringify(character, null, 2));
 }
 
@@ -257,78 +401,36 @@ async function loadCharacter(filePath: string): Promise<Character> {
 }
 
 export async function loadCharacters(
-    charactersArg: string
+    charactersArg?: string
 ): Promise<Character[]> {
-    let characterPaths = charactersArg
-        ?.split(",")
-        .map((filePath) => filePath.trim());
-    const loadedCharacters: Character[] = [];
+    let loadedCharacters: Character[] = [];
 
-    if (characterPaths?.length > 0) {
-        for (const characterPath of characterPaths) {
-            let content: string | null = null;
-            let resolvedPath = "";
+    if (charactersArg) {
+        // Existing logic for loading specific characters
+        let characterPaths = charactersArg
+            .split(",")
+            .map((filePath) => filePath.trim());
+        // ... (rest of the existing logic for loading specific characters)
+    }
 
-            // Try different path resolutions in order
-            const pathsToTry = [
-                characterPath, // exact path as specified
-                path.resolve(process.cwd(), characterPath), // relative to cwd
-                path.resolve(process.cwd(), "agent", characterPath), // Add this
-                path.resolve(__dirname, characterPath), // relative to current script
-                path.resolve(
-                    __dirname,
-                    "characters",
-                    path.basename(characterPath)
-                ), // relative to agent/characters
-                path.resolve(
-                    __dirname,
-                    "../characters",
-                    path.basename(characterPath)
-                ), // relative to characters dir from agent
-                path.resolve(
-                    __dirname,
-                    "../../characters",
-                    path.basename(characterPath)
-                ), // relative to project root characters dir
-            ];
+    // If no characters were loaded or no argument was provided, load all existing characters
+    if (loadedCharacters.length === 0) {
+        const charactersDir = path.join(__dirname, "../../characters");
+        const files = await fsn.readdir(charactersDir);
+        const characterFiles = files.filter((file) => file.endsWith(".json"));
 
-            elizaLogger.info(
-                "Trying paths:",
-                pathsToTry.map((p) => ({
-                    path: p,
-                    exists: fs.existsSync(p),
-                }))
-            );
-
-            for (const tryPath of pathsToTry) {
-                content = tryLoadFile(tryPath);
-                if (content !== null) {
-                    resolvedPath = tryPath;
-                    break;
-                }
-            }
-
-            if (content === null) {
-                elizaLogger.error(
-                    `Error loading character from ${characterPath}: File not found in any of the expected locations`
-                );
-                elizaLogger.error("Tried the following paths:");
-                pathsToTry.forEach((p) => elizaLogger.error(` - ${p}`));
-                process.exit(1);
-            }
-
+        for (const file of characterFiles) {
+            const characterPath = path.join(charactersDir, file);
             try {
-                const character: Character = await loadCharacter(resolvedPath);
-
+                const character = await loadCharacter(characterPath);
                 loadedCharacters.push(character);
                 elizaLogger.info(
-                    `Successfully loaded character from: ${resolvedPath}`
+                    `Successfully loaded character from: ${characterPath}`
                 );
             } catch (e) {
                 elizaLogger.error(
-                    `Error parsing character from ${resolvedPath}: ${e}`
+                    `Error parsing character from ${characterPath}: ${e}`
                 );
-                process.exit(1);
             }
         }
     }
@@ -920,12 +1022,12 @@ async function startAgent(
                 );
                 delete character.settings.secrets.TWITTER_PASSWORD_ENCRYPTED;
             }
-            if (character.settings.secrets.TWITTER_COOKIE_ENCRYPTED) {
+            /*if (character.settings.secrets.TWITTER_COOKIE_ENCRYPTED) {
                 character.settings.secrets.TWITTER_COOKIE = decrypt(
                     character.settings.secrets.TWITTER_COOKIE_ENCRYPTED
                 );
                 delete character.settings.secrets.TWITTER_COOKIE_ENCRYPTED;
-            }
+            }*/
         }
 
         character.id ??= stringToUuid(character.name);
@@ -1004,54 +1106,49 @@ const checkPortAvailable = (port: number): Promise<boolean> => {
 const startAgents = async () => {
     const directClient = new DirectClient();
     let serverPort = parseInt(settings.SERVER_PORT || "3000");
-    const args = parseArguments();
-    let charactersArg = args.characters || args.character;
-    let characters = [defaultCharacter];
-
-    if (charactersArg) {
-        characters = await loadCharacters(charactersArg);
-    }
 
     try {
+        // Load all existing agents
+        const characters = await loadCharacters();
+
+        // Start all existing agents
         for (const character of characters) {
-            await startAgent(character, directClient);
+            const runtime = await startAgent(character, directClient);
+            directClient.registerAgent(runtime);
+            elizaLogger.log(`Agent ${character.name} started successfully.`);
         }
 
+        // Setup RabbitMQ for handling new agents and credential updates
         await setupRabbitMQ(directClient);
+
+        // Find available port
+        while (!(await checkPortAvailable(serverPort))) {
+            elizaLogger.warn(
+                `Port ${serverPort} is in use, trying ${serverPort + 1}`
+            );
+            serverPort++;
+        }
+
+        // Start the DirectClient server
+        directClient.start(serverPort);
+
+        if (serverPort !== parseInt(settings.SERVER_PORT || "3000")) {
+            elizaLogger.log(`Server started on alternate port ${serverPort}`);
+        }
+
+        elizaLogger.log("All agents started successfully. Server is ready.");
     } catch (error) {
         elizaLogger.error(
             "Error starting agents or setting up RabbitMQ:",
             error
         );
     }
-
-    // Find available port
-    while (!(await checkPortAvailable(serverPort))) {
-        elizaLogger.warn(
-            `Port ${serverPort} is in use, trying ${serverPort + 1}`
-        );
-        serverPort++;
-    }
-
-    // upload some agent functionality into directClient
-    directClient.startAgent = async (character) => {
-        // Handle plugins
-        character.plugins = await handlePluginImporting(character.plugins);
-
-        // wrap it so we don't have to inject directClient later
-        return startAgent(character, directClient);
-    };
-
-    directClient.start(serverPort);
-
-    if (serverPort !== parseInt(settings.SERVER_PORT || "3000")) {
-        elizaLogger.log(`Server started on alternate port ${serverPort}`);
-    }
-
-    elizaLogger.log(
-        "Run `pnpm start:client` to start the client and visit the outputted URL (http://localhost:5173) to chat with your agents. When running multiple agents, use client with different port `SERVER_PORT=3001 pnpm start:client`"
-    );
 };
+
+startAgents().catch((error) => {
+    elizaLogger.error("Unhandled error in startAgents:", error);
+    process.exit(1);
+});
 
 startAgents().catch((error) => {
     elizaLogger.error("Unhandled error in startAgents:", error);

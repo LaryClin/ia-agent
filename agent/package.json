@@ -48,11 +48,7 @@
         "@elizaos/plugin-solana-agentkit": "workspace:*",
         "@elizaos/plugin-autonome": "workspace:*",
         "@elizaos/plugin-tee": "workspace:*",
-        "@elizaos/plugin-tee-log": "workspace:*",
-        "yargs": "17.7.2",
-        "better-sqlite3": "^8.5.0",
-        "amqplib": "^0.10.3",
-        "pg": "^8.11.1"
+        "@elizaos/plugin-tee-log": "workspace:*"
     },
     "devDependencies": {
         "@types/jest": "^29.5.14",
