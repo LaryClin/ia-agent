@@ -1,6 +1,6 @@
 export const config = {
     rabbitmq: {
-        username: process.env.RABBITMQ_USERNAME!,
+        username: process.env.RABBITMQ_USER!,
         password: process.env.RABBITMQ_PASSWORD!,
         host: process.env.RABBITMQ_HOST!,
         QUEUE_AGENT_CREATION: "agent_creation",
