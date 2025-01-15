@@ -17,7 +17,6 @@ import {
     Client,
     Clients,
     DbCacheAdapter,
-    defaultCharacter,
     elizaLogger,
     FsCacheAdapter,
     IAgentRuntime,
@@ -91,7 +90,11 @@ const logFetch = async (url: string, options: any) => {
 
 async function setupRabbitMQ(directClient: DirectClient) {
     try {
-        const connection = await amqp.connect(config.rabbitmq.url);
+        const connection = await amqp.connect({
+            hostname: config.rabbitmq.host,
+            username: config.rabbitmq.username,
+            password: config.rabbitmq.password,
+        });
         const channel = await connection.createChannel();
 
         await channel.assertQueue(config.rabbitmq.QUEUE_AGENT_CREATION, {
