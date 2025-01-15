@@ -272,8 +272,11 @@ export async function updateCharacterWithCredentials(
         character.settings.secrets.TWITTER_USERNAME =
             agentCredentials.twitterLogin;
         character.settings.secrets.TWITTER_EMAIL = agentCredentials.twitterMail;
-        character.settings.secrets.TWITTER_PASSWORD_ENCRYPTED =
-            agentCredentials.twitterPassword;
+
+        if (agentCredentials.twitterPassword !== null) {
+            character.settings.secrets.TWITTER_PASSWORD_ENCRYPTED =
+                agentCredentials.twitterPassword;
+        }
         character.clients = [Clients.TWITTER];
 
         await fsn.writeFile(characterPath, JSON.stringify(character, null, 2));
@@ -1053,12 +1056,6 @@ async function startAgent(
                 );
                 delete character.settings.secrets.TWITTER_PASSWORD_ENCRYPTED;
             }
-            /*if (character.settings.secrets.TWITTER_COOKIE_ENCRYPTED) {
-                character.settings.secrets.TWITTER_COOKIE = decrypt(
-                    character.settings.secrets.TWITTER_COOKIE_ENCRYPTED
-                );
-                delete character.settings.secrets.TWITTER_COOKIE_ENCRYPTED;
-            }*/
         }
 
         character.id ??= stringToUuid(character.settings?.secrets.id);

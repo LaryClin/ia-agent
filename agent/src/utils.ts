@@ -18,7 +18,7 @@ export interface AgentCredentials {
     postExamples: string[];
     twitterMail: string;
     twitterLogin: string;
-    twitterPassword: string;
+    twitterPassword?: string;
 }
 
 export function decrypt(encryptedData: string): string {
