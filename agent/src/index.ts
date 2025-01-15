@@ -155,11 +155,7 @@ async function setupRabbitMQ(directClient: DirectClient) {
 
         elizaLogger.log("Connected to RabbitMQ and listening for agent events");
     } catch (error) {
-        elizaLogger.error(
-            "Failed to connect to RabbitMQ:",
-            error,
-            config.rabbitmq.url
-        );
+        elizaLogger.error("Failed to connect to RabbitMQ:", error);
     }
 }
 

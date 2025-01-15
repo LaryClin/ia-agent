@@ -16,7 +16,6 @@ services:
             - TWITTER_DRY_RUN=false
             - SLIPPAGE=1
             - SERVER_PORT=3000
-            - RABBITMQ_URL=${RABBITMQ_URL}
         ports:
             - "3000:3000"
         restart: always
