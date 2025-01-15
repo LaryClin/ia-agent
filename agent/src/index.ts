@@ -90,16 +90,13 @@ const logFetch = async (url: string, options: any) => {
 
 function connectToRabbitMQ() {
     return amqp
-        .connect(
-            {
-                hostname: config.rabbitmq.host,
-                port: 5672,
-                username: config.rabbitmq.username,
-                password: config.rabbitmq.password,
-                vhost: "/",
-            },
-            { timeout: 5000 }
-        )
+        .connect({
+            hostname: config.rabbitmq.host,
+            port: 5672,
+            username: config.rabbitmq.username,
+            password: config.rabbitmq.password,
+            vhost: "/",
+        })
         .then((connection) => {
             elizaLogger.log("Successfully connected to RabbitMQ");
             return connection;
