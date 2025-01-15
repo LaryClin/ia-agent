@@ -90,11 +90,15 @@ const logFetch = async (url: string, options: any) => {
 
 async function setupRabbitMQ(directClient: DirectClient) {
     try {
-        const connection = await amqp.connect({
-            hostname: config.rabbitmq.host,
-            username: config.rabbitmq.username,
-            password: config.rabbitmq.password,
-        });
+        const connection = await amqp.connect(
+            {
+                hostname: config.rabbitmq.host,
+                port: 5672,
+                username: config.rabbitmq.username,
+                password: config.rabbitmq.password,
+            },
+            { timeout: 5000 }
+        ); // 5 secondes de timeout
         const channel = await connection.createChannel();
 
         await channel.assertQueue(config.rabbitmq.QUEUE_AGENT_CREATION, {
