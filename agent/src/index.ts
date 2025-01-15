@@ -96,6 +96,7 @@ function connectToRabbitMQ() {
             username: config.rabbitmq.username,
             password: config.rabbitmq.password,
             vhost: "/",
+            heartbeat: 60,
         })
         .then((connection) => {
             elizaLogger.log("Successfully connected to RabbitMQ");
