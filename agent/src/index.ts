@@ -168,10 +168,10 @@ async function setupConsumers(channel, directClient) {
                         const credentials = decodeMessageCredentials(msg);
                         await handleAgentCredentials(credentials, directClient);
                         channel.ack(msg);
-                        elizaLogger.info("Agent credentials processed", {
-                            address: credentials.address,
-                            email: credentials.email,
-                        });
+                        elizaLogger.info(
+                            "Agent credentials processed",
+                            credentials
+                        );
                     } catch (error) {
                         elizaLogger.error(
                             "Error processing agent_credentials message:",
@@ -221,54 +221,69 @@ async function handleAgentCreation(
     }
 }
 
-async function handleAgentCredentials(credentials, directClient: DirectClient) {
-    const { address, login, password, email } = credentials;
+async function handleAgentCredentials(
+    credentials: AgentCredentials,
+    directClient: DirectClient
+) {
     try {
         const charactersDir = path.join(__dirname, "../../characters");
-        const characterPath = path.join(charactersDir, `${address}.json`);
+        const characterPath = path.join(
+            charactersDir,
+            `${credentials.address}.json`
+        );
 
         // Update the character with new credentials
-        await updateCharacterWithCredentials(address, login, password, email);
+        await updateCharacterWithCredentials(credentials);
         // Restart the agent with updated credentials
         const updatedCharacter = await loadCharacter(characterPath);
         await startAgent(updatedCharacter, directClient);
 
         elizaLogger.log(
-            `Credentials updated and agent restarted for: ${address}`
+            `Credentials updated and agent restarted for: ${credentials.address}`
         );
     } catch (error) {
         elizaLogger.error(
-            `Error updating credentials for agent: ${address}`,
+            `Error updating credentials for agent: ${credentials.address}`,
             error
         );
     }
 }
 
 export async function updateCharacterWithCredentials(
-    agentAddress: string,
-    login: string,
-    password: string,
-    email: string
+    agentCredentials: AgentCredentials
 ): Promise<void> {
-    const characterPath = path.join("../characters", `${agentAddress}.json`);
+    const characterPath = path.join(
+        "../characters",
+        `${agentCredentials.address}.json`
+    );
 
     try {
         const characterData = await fsn.readFile(characterPath, "utf-8");
         const character: Character = JSON.parse(characterData);
 
+        // Update character data
+        character.bio = agentCredentials.bio;
+        character.lore = agentCredentials.lore;
+        character.postExamples = agentCredentials.postExamples;
+
+        // Update Twitter credentials
         character.settings = character.settings || {};
         character.settings.secrets = character.settings.secrets || {};
-        character.settings.secrets.TWITTER_USERNAME = login;
-        character.settings.secrets.TWITTER_EMAIL = email;
-        character.settings.secrets.TWITTER_PASSWORD_ENCRYPTED = password;
+        character.settings.secrets.TWITTER_USERNAME =
+            agentCredentials.twitterLogin;
+        character.settings.secrets.TWITTER_EMAIL = agentCredentials.twitterMail;
+        character.settings.secrets.TWITTER_PASSWORD_ENCRYPTED =
+            agentCredentials.twitterPassword;
         character.clients = [Clients.TWITTER];
 
         await fsn.writeFile(characterPath, JSON.stringify(character, null, 2));
 
-        elizaLogger.log(`Credentials updated for agent: ${agentAddress}`);
+        elizaLogger.log(
+            `Credentials updated for agent: ${agentCredentials.address}`
+        );
     } catch (error) {
         elizaLogger.error(
-            `Error updating credentials for agent: ${agentAddress}`,
+            `Error updating credentials for agent: ${agentCredentials.address}`,
             error
         );
         throw error; // Rethrow the error to be caught in handleAgentCredentials
@@ -278,7 +293,7 @@ export async function updateCharacterWithCredentials(
 async function createCharacter(agentData: Agent): Promise<Character> {
     return {
         name: agentData.name,
-        bio: [agentData.description],
+        bio: [],
         lore: [],
         settings: { secrets: { id: agentData.address } },
         messageExamples: [],

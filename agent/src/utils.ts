@@ -9,14 +9,16 @@ interface RabbitMQMessage {
 export interface Agent {
     address: string;
     name: string;
-    description: string;
 }
 
 export interface AgentCredentials {
     address: string;
-    email: string;
-    login: string;
-    password: string;
+    bio: string[];
+    lore: string[];
+    postExamples: string[];
+    twitterMail: string;
+    twitterLogin: string;
+    twitterPassword: string;
 }
 
 export function decrypt(encryptedData: string): string {
@@ -79,9 +81,12 @@ export function decodeMessageCredentials(
         // Vérification que tous les champs requis sont présents
         if (
             !decodedMessage.address ||
-            !decodedMessage.email ||
-            !decodedMessage.login ||
-            !decodedMessage.password
+            !decodedMessage.bio ||
+            !decodedMessage.lore ||
+            !decodedMessage.postExamples ||
+            !decodedMessage.twitterMail ||
+            !decodedMessage.twitterLogin ||
+            !decodedMessage.twitterPassword
         ) {
             throw new Error("Missing required fields in agent credentials");
         }
