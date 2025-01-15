@@ -96,7 +96,7 @@ function connectToRabbitMQ() {
                 port: 5672,
                 username: config.rabbitmq.username,
                 password: config.rabbitmq.password,
-                vhost: config.rabbitmq.host,
+                vhost: "/",
             },
             { timeout: 5000 }
         )
