@@ -1,5 +1,6 @@
 services:
     tee:
+        container_name: eliza-agent
         build:
             context: .
             dockerfile: Dockerfile

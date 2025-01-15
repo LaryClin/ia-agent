@@ -8,8 +8,4 @@ RUN npm install -g pnpm@9.4.0 && \
 
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc turbo.json ./
-
-RUN pnpm install --frozen-lockfile
-
 CMD ["pnpm", "start"]
