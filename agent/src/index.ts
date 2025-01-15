@@ -89,36 +89,6 @@ const logFetch = async (url: string, options: any) => {
     return fetch(url, options);
 };
 
-/* async function setupRabbitMQ(directClient: DirectClient) {
-    try {
-        const connection = await amqp.connect(config.rabbitmq.url);
-        const channel = await connection.createChannel();
-
-        await channel.checkQueue(config.rabbitmq.queue);
-
-        channel.consume(config.rabbitmq.queue, async (msg) => {
-            if (msg) {
-                try {
-                    const agentData = JSON.parse(msg.content.toString());
-                    const character = await createCharacter(agentData);
-                    await saveCharacterFile(character);
-                    await startAgent(character, directClient);
-                    channel.ack(msg);
-                } catch (error) {
-                    elizaLogger.error("Error processing message:", error);
-                    channel.nack(msg);
-                }
-            }
-        });
-
-        elizaLogger.log(
-            "Connected to RabbitMQ and listening for new agent creations"
-        );
-    } catch (error) {
-        elizaLogger.error("Failed to connect to RabbitMQ:", error);
-    }
-}
- */
 async function setupRabbitMQ(directClient: DirectClient) {
     try {
         const connection = await amqp.connect(config.rabbitmq.url);
@@ -198,7 +168,7 @@ async function handleAgentCreation(
         try {
             const character = await createCharacter(agentData);
             await saveCharacterFile(character);
-            await directClient.startAgent(character);
+            await startAgent(character, directClient);
             elizaLogger.log(`Agent created and started: ${character.id}`);
         } catch (error) {
             elizaLogger.error(
@@ -212,14 +182,14 @@ async function handleAgentCreation(
 async function handleAgentCredentials(credentials, directClient: DirectClient) {
     const { address, login, password, email } = credentials;
     try {
+        const charactersDir = path.join(__dirname, "../../characters");
+        const characterPath = path.join(charactersDir, `${address}.json`);
+
         // Update the character with new credentials
         await updateCharacterWithCredentials(address, login, password, email);
-        directClient.unregisterAgent(address);
-
         // Restart the agent with updated credentials
-        const updatedCharacter = await loadCharacter(address);
-        const newRuntime = await startAgent(updatedCharacter, directClient);
-        directClient.registerAgent(newRuntime);
+        const updatedCharacter = await loadCharacter(characterPath);
+        await startAgent(updatedCharacter, directClient);
 
         elizaLogger.log(
             `Credentials updated and agent restarted for: ${address}`
@@ -238,7 +208,7 @@ export async function updateCharacterWithCredentials(
     password: string,
     email: string
 ): Promise<void> {
-    const characterPath = path.join("./characters", `${agentAddress}.json`);
+    const characterPath = path.join("../characters", `${agentAddress}.json`);
 
     try {
         const characterData = await fsn.readFile(characterPath, "utf-8");
@@ -285,7 +255,7 @@ async function createCharacter(agentData: Agent): Promise<Character> {
 }
 
 async function saveCharacterFile(character: Character): Promise<void> {
-    const outputDir = "./characters";
+    const outputDir = "../characters";
     await fsn.mkdir(outputDir, { recursive: true });
     const outputFile = path.join(
         outputDir,
@@ -362,11 +332,12 @@ async function loadCharacter(filePath: string): Promise<Character> {
     if (!content) {
         throw new Error(`Character file not found: ${filePath}`);
     }
+
     let character = JSON.parse(content);
     validateCharacterConfig(character);
 
     // .id isn't really valid
-    const characterId = character.id || character.name;
+    const characterId = stringToUuid(character.settings?.secrets?.id);
     const characterPrefix = `CHARACTER.${characterId.toUpperCase().replace(/ /g, "_")}.`;
     const characterSettings = Object.entries(process.env)
         .filter(([key]) => key.startsWith(characterPrefix))
@@ -397,6 +368,9 @@ async function loadCharacter(filePath: string): Promise<Character> {
             );
         }
     }
+    elizaLogger.log(
+        `Successfully loaded character from: ${filePath}, with content: ${character}`
+    );
     return character;
 }
 
@@ -1030,7 +1004,7 @@ async function startAgent(
             }*/
         }
 
-        character.id ??= stringToUuid(character.name);
+        character.id ??= stringToUuid(character.settings?.secrets.id);
         character.username ??= character.name;
 
         const token = getTokenForProvider(character.modelProvider, character);
