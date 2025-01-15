@@ -88,7 +88,7 @@ const logFetch = async (url: string, options: any) => {
     return fetch(url, options);
 };
 
-async function setupRabbitMQ(directClient: DirectClient) {
+async function connectToRabbitMQ() {
     try {
         const connection = await amqp.connect(
             {
@@ -98,51 +98,76 @@ async function setupRabbitMQ(directClient: DirectClient) {
                 password: config.rabbitmq.password,
             },
             { timeout: 5000 }
-        ); // 5 secondes de timeout
-        const channel = await connection.createChannel();
+        );
+        elizaLogger.log("Successfully connected to RabbitMQ", config.rabbitmq);
+        return connection;
+    } catch (error) {
+        elizaLogger.error(
+            "Failed to connect to RabbitMQ:",
+            error,
+            config.rabbitmq
+        );
+        throw new Error(`RabbitMQ connection error: ${error.message}`);
+    }
+}
 
+async function createChannel(connection) {
+    try {
+        const channel = await connection.createChannel();
+        elizaLogger.log("Successfully created RabbitMQ channel");
+        return channel;
+    } catch (error) {
+        elizaLogger.error("Failed to create RabbitMQ channel:", error);
+        throw new Error(`Channel creation error: ${error.message}`);
+    }
+}
+
+async function assertQueues(channel) {
+    try {
         await channel.assertQueue(config.rabbitmq.QUEUE_AGENT_CREATION, {
             durable: true,
         });
         await channel.assertQueue(config.rabbitmq.QUEUE_AGENT_CREDENTIALS, {
             durable: true,
         });
+        elizaLogger.log("Successfully asserted RabbitMQ queues");
+    } catch (error) {
+        elizaLogger.error("Failed to assert RabbitMQ queues:", error);
+        throw new Error(`Queue assertion error: ${error.message}`);
+    }
+}
 
-        channel.consume(
-            config.rabbitmq.QUEUE_AGENT_CREATION,
-            async (msg: ConsumeMessage | null) => {
-                if (msg) {
-                    try {
-                        const agents: Agent[] = decodeMessage(msg);
-                        await handleAgentCreation(agents, directClient);
-                        channel.ack(msg);
-                        elizaLogger.info(
-                            "Agent creation message received",
-                            JSON.stringify(agents)
-                        );
-                    } catch (error) {
-                        elizaLogger.error(
-                            "Error processing agent_creation message:",
-                            error
-                        );
-                        channel.nack(msg);
-                    }
+async function setupConsumers(channel, directClient) {
+    try {
+        channel.consume(config.rabbitmq.QUEUE_AGENT_CREATION, async (msg) => {
+            if (msg) {
+                try {
+                    const agents = decodeMessage(msg);
+                    await handleAgentCreation(agents, directClient);
+                    channel.ack(msg);
+                    elizaLogger.info(
+                        "Agent creation message processed",
+                        JSON.stringify(agents)
+                    );
+                } catch (error) {
+                    elizaLogger.error(
+                        "Error processing agent_creation message:",
+                        error
+                    );
+                    channel.nack(msg);
                 }
             }
-        );
+        });
 
         channel.consume(
             config.rabbitmq.QUEUE_AGENT_CREDENTIALS,
-            async (msg: ConsumeMessage | null) => {
+            async (msg) => {
                 if (msg) {
                     try {
-                        const credentials: AgentCredentials =
-                            decodeMessageCredentials(msg);
-
+                        const credentials = decodeMessageCredentials(msg);
                         await handleAgentCredentials(credentials, directClient);
-
                         channel.ack(msg);
-                        elizaLogger.info("Agent credentials received", {
+                        elizaLogger.info("Agent credentials processed", {
                             address: credentials.address,
                             email: credentials.email,
                         });
@@ -157,9 +182,22 @@ async function setupRabbitMQ(directClient: DirectClient) {
             }
         );
 
-        elizaLogger.log("Connected to RabbitMQ and listening for agent events");
+        elizaLogger.log("Successfully set up RabbitMQ consumers");
     } catch (error) {
-        elizaLogger.error("Failed to connect to RabbitMQ:", error);
+        elizaLogger.error("Failed to set up RabbitMQ consumers:", error);
+        throw new Error(`Consumer setup error: ${error.message}`);
+    }
+}
+
+async function setupRabbitMQ(directClient: DirectClient) {
+    try {
+        const connection = await connectToRabbitMQ();
+        const channel = await createChannel(connection);
+        await assertQueues(channel);
+        await setupConsumers(channel, directClient);
+        elizaLogger.log("RabbitMQ setup completed successfully");
+    } catch (error) {
+        elizaLogger.error("RabbitMQ setup failed:", error);
     }
 }
 
