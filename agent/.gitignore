@@ -1,7 +1,4 @@
-*.ts
-!config.ts
-!index.ts
-!character.ts
+/src/__tests__
 .env
 *.env
 .env*
