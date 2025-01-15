@@ -88,9 +88,9 @@ const logFetch = async (url: string, options: any) => {
     return fetch(url, options);
 };
 
-async function connectToRabbitMQ() {
-    try {
-        const connection = await amqp.connect(
+function connectToRabbitMQ() {
+    return amqp
+        .connect(
             {
                 hostname: config.rabbitmq.host,
                 port: 5672,
@@ -98,17 +98,15 @@ async function connectToRabbitMQ() {
                 password: config.rabbitmq.password,
             },
             { timeout: 5000 }
-        );
-        elizaLogger.log("Successfully connected to RabbitMQ", config.rabbitmq);
-        return connection;
-    } catch (error) {
-        elizaLogger.error(
-            "Failed to connect to RabbitMQ:",
-            error,
-            config.rabbitmq
-        );
-        throw new Error(`RabbitMQ connection error: ${error.message}`);
-    }
+        )
+        .then((connection) => {
+            elizaLogger.log("Successfully connected to RabbitMQ");
+            return connection;
+        })
+        .catch((error) => {
+            elizaLogger.error("Failed to connect to RabbitMQ:", error);
+            throw new Error(`RabbitMQ connection error: ${error.message}`);
+        });
 }
 
 async function createChannel(connection) {
