@@ -61,7 +61,7 @@ import net from "net";
 import path from "path";
 import { fileURLToPath } from "url";
 import yargs from "yargs";
-import amqp, { ConsumeMessage } from "amqplib";
+import amqp from "amqplib";
 import { config } from "./config";
 import { promises as fsn } from "fs";
 import {
@@ -282,6 +282,7 @@ export async function updateCharacterWithCredentials(
             `Credentials updated for agent: ${agentCredentials.address}`
         );
     } catch (error) {
+        console.log("Error updating credentials:", error);
         elizaLogger.error(
             `Error updating credentials for agent: ${agentCredentials.address}`,
             error
