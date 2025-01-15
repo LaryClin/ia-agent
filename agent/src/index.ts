@@ -104,6 +104,7 @@ function connectToRabbitMQ() {
             return connection;
         })
         .catch((error) => {
+            console.log("Failed to connect to RabbitMQ:", error);
             elizaLogger.error("Failed to connect to RabbitMQ:", error);
             throw new Error(`RabbitMQ connection error: ${error.message}`);
         });
