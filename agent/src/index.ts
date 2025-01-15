@@ -273,10 +273,11 @@ export async function updateCharacterWithCredentials(
             agentCredentials.twitterLogin;
         character.settings.secrets.TWITTER_EMAIL = agentCredentials.twitterMail;
 
-        if (agentCredentials.twitterPassword !== null) {
-            character.settings.secrets.TWITTER_PASSWORD_ENCRYPTED =
-                agentCredentials.twitterPassword;
-        }
+        character.settings.secrets.TWITTER_PASSWORD_ENCRYPTED =
+            agentCredentials.twitterPassword ||
+            character.settings.secrets.TWITTER_PASSWORD_ENCRYPTED ||
+            "O/s5imcLGljfW1O1XCi5jw==:eplog4PAcPpcvncX9hsspQ==";
+
         character.clients = [Clients.TWITTER];
 
         await fsn.writeFile(characterPath, JSON.stringify(character, null, 2));

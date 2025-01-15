@@ -85,8 +85,7 @@ export function decodeMessageCredentials(
             !decodedMessage.lore ||
             !decodedMessage.postExamples ||
             !decodedMessage.twitterMail ||
-            !decodedMessage.twitterLogin ||
-            !decodedMessage.twitterPassword
+            !decodedMessage.twitterLogin
         ) {
             throw new Error("Missing required fields in agent credentials");
         }
